@@ -432,13 +432,6 @@ public class Controller {
             return false;
         }
 
-        if (!email.equals("")) {
-            if (!email.matches(EMAIL_RE)) {
-                errors.put("email_error", "Invalid Email Address");
-                return false;
-            }
-        }
-
         return true;
     }
 
