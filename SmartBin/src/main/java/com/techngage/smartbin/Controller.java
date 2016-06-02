@@ -21,6 +21,7 @@ package com.techngage.smartbin;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoDatabase;
+import com.sun.xml.internal.bind.v2.runtime.Location;
 import freemarker.template.Configuration;
 import freemarker.template.SimpleHash;
 import freemarker.template.Template;
@@ -56,6 +57,7 @@ public class Controller {
     private final SessionDAO sessionDAO;
     private final RouteDAO routeDAO;
     private final TruckDAO truckDAO;
+    private final LocationDAO locationDAO;
 
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {
@@ -74,6 +76,7 @@ public class Controller {
         sessionDAO = new SessionDAO(smartbinDatabase);
         routeDAO = new RouteDAO(smartbinDatabase);
         truckDAO = new TruckDAO(smartbinDatabase);
+        locationDAO = new LocationDAO(smartbinDatabase);
 
         cfg = createFreemarkerConfiguration();
         setPort(8082);
@@ -158,13 +161,26 @@ public class Controller {
             }
         });
 
-        // present signup form for smartbin app
-        get(new Route("/insert") {
+        // insert location and coordinates, public api called from micro-controller
+        post(new Route("/insert") {
             @Override
             public Object handle(Request request, Response response) {
+                String cookie = getSessionCookie(request);
+                String username = sessionDAO.findUserNameBySessionId(cookie);
+
+                if (username == null) {
+                    System.out.println("You are not authorized");
+                    response.status(403);
+                }
+                else {
                     // Insert route.
-                String route = request.queryParams("route");
-                routeDAO.insertRoute(route);
+                    String location = request.queryParams("location");
+                    String coordinates = request.queryParams("coordinates");
+                    boolean isDuplicate = locationDAO.checkDuplicateRoute(coordinates);
+                    if (location != null && coordinates != null && !isDuplicate) {
+                        locationDAO.insertRoute(location, coordinates);
+                    }
+                }
                 return null;
             }
         });
@@ -196,7 +212,7 @@ public class Controller {
                         System.out.println("Session ID is" + sessionID);
 
                         response.raw().addCookie(new Cookie("session", sessionID));
-                        response.redirect("/welcome");
+                        response.redirect("/dashboard");
                     }
                 }
                 else {
@@ -228,7 +244,7 @@ public class Controller {
             }
         });
 
-        get(new FreemarkerBasedRoute("/welcome", "welcome.ftl") {
+        get(new FreemarkerBasedRoute("/dashboard", "dashboard.ftl") {
             @Override
             protected void doHandle(Request request, Response response, Writer writer) throws IOException, TemplateException {
 
@@ -236,7 +252,7 @@ public class Controller {
                 String username = sessionDAO.findUserNameBySessionId(cookie);
 
                 if (username == null) {
-                    System.out.println("welcome() can't identify the user, redirecting to signup");
+                    System.out.println("dashboard() can't identify the user, redirecting to signup");
                     response.redirect("/login");
 
                 }
@@ -283,7 +299,7 @@ public class Controller {
             }
         });
 
-        // process output coming from login form. On success redirect folks to the welcome page
+        // process output coming from login form. On success redirect folks to the dashboard
         // on failure, just return an error and let them try again.
         post(new FreemarkerBasedRoute("/login", "login.ftl") {
             @Override
@@ -308,7 +324,7 @@ public class Controller {
                         // set the cookie for the user's browser
                         response.raw().addCookie(new Cookie("session", sessionID));
 
-                        response.redirect("/welcome");
+                        response.redirect("/dashboard");
                     }
                 }
                 else {
